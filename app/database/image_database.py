@@ -151,6 +151,14 @@ class ImageDatabase:
                     continue
             
             db_embeddings = np.array(data["embeddings"])
+            
+            # Vérifier la compatibilité des dimensions
+            if len(target_embeddings) != len(db_embeddings):
+                print(f"Incompatibilité de dimensions: {len(target_embeddings)} vs {len(db_embeddings)} pour {image_name}")
+                # Ignorer cet élément plutôt que de planter
+                continue
+            
+            # Calculer la similarité seulement si les dimensions correspondent
             similarity = np.dot(target_embeddings, db_embeddings) / (
                 np.linalg.norm(target_embeddings) * np.linalg.norm(db_embeddings)
             )

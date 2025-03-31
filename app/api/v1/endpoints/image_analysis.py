@@ -31,8 +31,11 @@ async def analyze_image(
     Returns:
         Dict[str, Any]: Les résultats de l'analyse et les vêtements similaires
     """
-    # Analyse l'image
-    embeddings = await image_analysis_service.analyze_image(file)
+    # Analyse le vêtement pour détecter ses caractéristiques
+    analysis_result = await image_analysis_service.analyze_clothing(file)
+    
+    # Analyse l'image pour les embeddings (fonctionnalité existante)
+    embeddings = analysis_result["embeddings"]
     
     # Construire les filtres
     filters = {}
@@ -43,12 +46,18 @@ async def analyze_image(
     if color:
         filters["color"] = color
     
-    # Trouve des vêtements similaires
-    similar_items = db.get_similar_images(embeddings, top_k=top_k, filters=filters)
+    # Trouver des vêtements similaires dans la base de données
+    similar_images = db.get_similar_images(embeddings, top_k, filters)
     
+    # Retourner les résultats de l'analyse + vêtements similaires
     return {
-        "similar_items": similar_items,
-        "filters_applied": filters
+        "analysis": {
+            "color": analysis_result["color"],
+            "predicted_type": analysis_result["predicted_type"],
+            "predicted_season": analysis_result["predicted_season"],
+            "predicted_style": analysis_result["predicted_style"]
+        },
+        "similar_items": similar_images
     }
 
 @router.put("/metadata/{image_name}")
