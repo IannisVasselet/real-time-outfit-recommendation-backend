@@ -1,0 +1,26 @@
+# API
+fastapi==0.109.2
+uvicorn==0.27.1
+python-multipart==0.0.9
+pydantic==2.7.0
+pydantic-settings==2.2.1
+
+# Image Processing
+torch==2.2.1
+torchvision==0.17.1
+Pillow==10.2.0
+numpy==1.26.4
+
+# Database
+sqlalchemy==2.0.27
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Utilities
+python-dotenv==1.0.1
+python-jose==3.3.0
+passlib==1.7.4
+bcrypt==4.1.2
+
+# Approximate Search
+annoy==1.17.3 
