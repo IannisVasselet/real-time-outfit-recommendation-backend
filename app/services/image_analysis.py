@@ -1,9 +1,10 @@
 """
-Service d'analyse d'images utilisant ResNet50.
+Service d'analyse d'images utilisant ResNet50 et des modèles spécialisés pour la détection de caractéristiques.
 """
 import os
+import colorsys
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, Tuple
 import torch
 import torchvision.transforms as transforms
 from torchvision.models import resnet50, ResNet50_Weights
@@ -12,23 +13,24 @@ import numpy as np
 from fastapi import UploadFile
 from app.core.config import settings
 from app.services.file_storage import file_storage_service
+from app.models.clothing_classifier import ClothingClassifier, ColorAnalyzer, SeasonClassifier
 
 class ImageAnalysisService:
-    """
-    Service d'analyse d'images utilisant ResNet50.
-    """
     def __init__(self):
         """
         Initialise le service d'analyse d'images.
         """
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = resnet50(weights=ResNet50_Weights.DEFAULT)
-        self.model.eval()
-        self.model.to(self.device)
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Supprime la dernière couche de classification
-        self.model = torch.nn.Sequential(*list(self.model.children())[:-1])
+        # Initialiser les modèles
+        self.clothing_classifier = ClothingClassifier().to(self.device)
+        self.color_analyzer = ColorAnalyzer()
+        self.season_classifier = SeasonClassifier().to(self.device)
         
+        # Charger les poids des modèles si disponibles
+        self._load_model_weights()
+        
+        # Définir les transformations d'image
         self.transform = transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
@@ -38,92 +40,122 @@ class ImageAnalysisService:
                 std=[0.229, 0.224, 0.225]
             )
         ])
-
+    
+    def _load_model_weights(self):
+        """
+        Charge les poids des modèles depuis les fichiers de sauvegarde.
+        """
+        # Chemins des fichiers de poids
+        clothing_weights = Path("app/models/weights/clothing_classifier.pth")
+        season_weights = Path("app/models/weights/season_classifier.pth")
+        
+        # Charger les poids si disponibles
+        if clothing_weights.exists():
+            self.clothing_classifier.load_state_dict(torch.load(clothing_weights))
+            print("Poids du classificateur de vêtements chargés")
+        
+        if season_weights.exists():
+            self.season_classifier.load_state_dict(torch.load(season_weights))
+            print("Poids du classificateur de saisons chargés")
+    
     def preprocess_image(self, image: Image.Image) -> torch.Tensor:
         """
         Prétraite une image pour l'analyse.
-
+        
         Args:
-            image: L'image à prétraiter
-
+            image: Image PIL à prétraiter
+            
         Returns:
-            torch.Tensor: L'image prétraitée
+            Tensor prétraité
         """
         return self.transform(image).unsqueeze(0).to(self.device)
-
+    
     def extract_features(self, image_tensor: torch.Tensor) -> np.ndarray:
         """
         Extrait les caractéristiques d'une image.
-
+        
         Args:
-            image_tensor: Le tenseur de l'image
-
+            image_tensor: Tensor d'image prétraité
+            
         Returns:
-            np.ndarray: Les caractéristiques extraites
+            Caractéristiques extraites
         """
         with torch.no_grad():
-            features = self.model(image_tensor)
-            features = features.squeeze().cpu().numpy()
-        return features
-
-    async def analyze_image(self, file: Union[str, UploadFile]) -> List[float]:
+            features = self.clothing_classifier.model.avgpool(
+                self.clothing_classifier.model.layer4(
+                    self.clothing_classifier.model.layer3(
+                        self.clothing_classifier.model.layer2(
+                            self.clothing_classifier.model.layer1(
+                                self.clothing_classifier.model.maxpool(
+                                    self.clothing_classifier.model.relu(
+                                        self.clothing_classifier.model.bn1(
+                                            self.clothing_classifier.model.conv1(image_tensor)
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+            return features.squeeze().cpu().numpy()
+    
+    async def analyze_clothing(self, file: Union[str, UploadFile]) -> Dict[str, Any]:
         """
-        Analyse une image et retourne ses caractéristiques.
-
+        Analyse un vêtement et détecte ses caractéristiques.
+        
         Args:
-            file: Le fichier image à analyser (chemin ou UploadFile)
-
+            file: Le fichier image à analyser
+            
         Returns:
-            List[float]: Les caractéristiques de l'image
+            Un dictionnaire contenant les caractéristiques détectées
         """
+        # Charger l'image
         if isinstance(file, str):
-            # Si c'est un chemin de fichier
             image_path = Path(file)
             image = Image.open(image_path).convert('RGB')
         else:
-            # Si c'est un UploadFile
-            # Sauvegarde l'image
             image_url = await file_storage_service.save_image(file)
             image_path = Path("app/static/images") / image_url.split("/")[-1]
             image = Image.open(image_path).convert('RGB')
         
-        # Prétraite et extrait les caractéristiques
+        # Prétraiter l'image
         image_tensor = self.preprocess_image(image)
+        
+        # Extraire les caractéristiques
         features = self.extract_features(image_tensor)
         
-        return features.tolist()
-
-    def find_similar_items(
-        self,
-        target_features: np.ndarray,
-        items: List[Dict[str, Any]],
-        top_k: int = 5
-    ) -> List[Dict[str, Any]]:
-        """
-        Trouve les items les plus similaires à une image cible.
-
-        Args:
-            target_features: Les caractéristiques de l'image cible
-            items: La liste des items à comparer
-            top_k: Le nombre d'items similaires à retourner
-
-        Returns:
-            List[Dict[str, Any]]: Les items les plus similaires
-        """
-        similarities = []
+        # Obtenir les prédictions des différents modèles
+        clothing_predictions = self.clothing_classifier.predict(image)
+        color_analysis = self.color_analyzer.analyze_colors(image)
+        season_predictions = self.season_classifier.predict(image)
         
-        for item in items:
-            if item.get("embeddings"):
-                item_features = np.array(item["embeddings"])
-                similarity = np.dot(target_features, item_features) / (
-                    np.linalg.norm(target_features) * np.linalg.norm(item_features)
-                )
-                similarities.append((similarity, item))
+        # Trouver le type de vêtement le plus probable
+        predicted_type = max(clothing_predictions.items(), key=lambda x: x[1])[0]
         
-        # Trie par similarité décroissante
-        similarities.sort(reverse=True)
+        # Trouver les saisons les plus probables (score > 0.3)
+        predicted_seasons = [
+            season for season, score in season_predictions.items()
+            if score > 0.3
+        ]
         
-        return [item for _, item in similarities[:top_k]]
+        # Si aucune saison n'a un score suffisant, utiliser "toutes saisons"
+        if not predicted_seasons:
+            predicted_seasons = ["toutes saisons"]
+        
+        # Retourner toutes les caractéristiques détectées
+        return {
+            "embeddings": features.tolist(),
+            "color_analysis": color_analysis,
+            "predicted_type": predicted_type,
+            "type_confidence": clothing_predictions[predicted_type],
+            "predicted_seasons": predicted_seasons,
+            "season_confidences": season_predictions,
+            "all_predictions": {
+                "clothing_types": clothing_predictions,
+                "seasons": season_predictions
+            }
+        }
 
 # Instance du service
 image_analysis_service = ImageAnalysisService() 
