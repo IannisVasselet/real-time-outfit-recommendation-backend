@@ -10,6 +10,7 @@ torch==2.2.1
 torchvision==0.17.1
 Pillow==10.2.0
 numpy==1.26.4
+pandas==2.1.1
 
 # Database
 sqlalchemy==2.0.27
@@ -23,4 +24,9 @@ passlib==1.7.4
 bcrypt==4.1.2
 
 # Approximate Search
-annoy==1.17.3 
+annoy==1.17.3
+
+# Additional dependencies
+requests>=2.26.0
+tqdm>=4.62.0
+scikit-learn>=0.24.0 
