@@ -15,7 +15,9 @@ from typing import List, Dict, Any, Tuple
 import pandas as pd
 
 # Ajouter le répertoire parent au PYTHONPATH
-sys.path.append(str(Path(__file__).parent.parent.parent))
+current_dir = Path(__file__).parent.parent.parent
+sys.path.append(str(current_dir))
+print(f"Chemin du projet : {current_dir}")
 
 from app.models.clothing_classifier import ClothingClassifier, SeasonClassifier
 
@@ -30,13 +32,26 @@ class FashionMNISTDataset(Dataset):
         split: str = "train"
     ):
         self.root_dir = Path(root_dir)
+        print(f"Initialisation du dataset {split} avec le répertoire : {self.root_dir}")
+        print(f"Contenu du répertoire : {list(self.root_dir.iterdir())}")
+        
         self.transform = transform
         self.split = split
         
+        # Vérifier l'existence du fichier d'annotations
+        annotations_path = self.root_dir / f"{split}_annotations.csv"
+        print(f"Recherche du fichier d'annotations : {annotations_path}")
+        
+        if not annotations_path.exists():
+            raise FileNotFoundError(
+                f"Le fichier d'annotations {annotations_path} n'existe pas. "
+                f"Vérifiez que le chemin est correct et que le fichier a été copié dans Colab."
+            )
+        
         # Charger les annotations
-        self.annotations = pd.read_csv(
-            self.root_dir / f"{split}_annotations.csv"
-        )
+        print(f"Chargement des annotations depuis {annotations_path}")
+        self.annotations = pd.read_csv(annotations_path)
+        print(f"Nombre d'annotations chargées : {len(self.annotations)}")
     
     def __len__(self) -> int:
         return len(self.annotations)
