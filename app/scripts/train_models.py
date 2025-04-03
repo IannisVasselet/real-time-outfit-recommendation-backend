@@ -173,7 +173,7 @@ def main():
     
     # Paramètres d'entraînement
     batch_size = 64  # Augmenté pour GPU
-    num_epochs = 10
+    num_epochs = 2  # Réduit à 2 époques
     learning_rate = 0.001
     
     print(f"\nParamètres d'entraînement:")
