@@ -29,4 +29,5 @@ annoy==1.17.3
 # Additional dependencies
 requests>=2.26.0
 tqdm>=4.62.0
-scikit-learn>=0.24.0 
+scikit-learn>=0.24.0
+colorthief==0.2.1 
